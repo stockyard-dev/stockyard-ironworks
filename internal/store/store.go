@@ -1,11 +1,23 @@
 package store
-import("database/sql";"fmt";"os";"path/filepath";"time";_ "modernc.org/sqlite")
-type DB struct{*sql.DB}
-type Artifact struct{ID int64 `json:"id"`;Name string `json:"name"`;Version string `json:"version"`;Platform string `json:"platform"`;SizeBytes int64 `json:"size_bytes"`;Checksum string `json:"checksum"`;StoragePath string `json:"storage_path"`;DownloadCount int `json:"download_count"`;CreatedAt time.Time `json:"created_at"`}
-func Open(d string)(*DB,error){os.MkdirAll(d,0755);dsn:=filepath.Join(d,"ironworks.db")+"?_journal_mode=WAL&_busy_timeout=5000";db,err:=sql.Open("sqlite",dsn);if err!=nil{return nil,fmt.Errorf("open: %w",err)};db.SetMaxOpenConns(1);migrate(db);return &DB{db},nil}
-func migrate(db *sql.DB){db.Exec(`CREATE TABLE IF NOT EXISTS artifacts(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,version TEXT NOT NULL,platform TEXT DEFAULT '',size_bytes INTEGER DEFAULT 0,checksum TEXT DEFAULT '',storage_path TEXT DEFAULT '',download_count INTEGER DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`)}
-func(db *DB)Create(a *Artifact)error{res,err:=db.Exec(`INSERT INTO artifacts(name,version,platform,size_bytes,checksum,storage_path)VALUES(?,?,?,?,?,?)`,a.Name,a.Version,a.Platform,a.SizeBytes,a.Checksum,a.StoragePath);if err!=nil{return err};a.ID,_=res.LastInsertId();return nil}
-func(db *DB)List(name string)([]Artifact,error){q:=`SELECT id,name,version,platform,size_bytes,checksum,storage_path,download_count,created_at FROM artifacts WHERE 1=1`;args:=[]interface{}{};if name!=""{q+=` AND name=?`;args=append(args,name)};q+=` ORDER BY created_at DESC`;rows,err:=db.Query(q,args...);if err!=nil{return nil,err};defer rows.Close();var out[]Artifact;for rows.Next(){var a Artifact;rows.Scan(&a.ID,&a.Name,&a.Version,&a.Platform,&a.SizeBytes,&a.Checksum,&a.StoragePath,&a.DownloadCount,&a.CreatedAt);out=append(out,a)};return out,nil}
-func(db *DB)Download(id int64){db.Exec(`UPDATE artifacts SET download_count=download_count+1 WHERE id=?`,id)}
-func(db *DB)Delete(id int64){db.Exec(`DELETE FROM artifacts WHERE id=?`,id)}
-func(db *DB)Stats()(map[string]interface{},error){var total int;var size int64;db.QueryRow(`SELECT COUNT(*),COALESCE(SUM(size_bytes),0) FROM artifacts`).Scan(&total,&size);return map[string]interface{}{"artifacts":total,"total_bytes":size},nil}
+import ("database/sql";"fmt";"os";"path/filepath";"time";_ "modernc.org/sqlite")
+type DB struct{db *sql.DB}
+type Item struct{
+	ID string `json:"id"`
+	Name string `json:"name"`
+	Description string `json:"description"`
+	Status string `json:"status"`
+	Category string `json:"category"`
+	Tags string `json:"tags"`
+	CreatedAt string `json:"created_at"`
+}
+func Open(d string)(*DB,error){if err:=os.MkdirAll(d,0755);err!=nil{return nil,err};db,err:=sql.Open("sqlite",filepath.Join(d,"ironworks.db")+"?_journal_mode=WAL&_busy_timeout=5000");if err!=nil{return nil,err}
+db.Exec(`CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,name TEXT NOT NULL,description TEXT DEFAULT '',status TEXT DEFAULT 'active',category TEXT DEFAULT '',tags TEXT DEFAULT '',created_at TEXT DEFAULT(datetime('now')))`)
+return &DB{db:db},nil}
+func(d *DB)Close()error{return d.db.Close()}
+func genID()string{return fmt.Sprintf("%d",time.Now().UnixNano())}
+func now()string{return time.Now().UTC().Format(time.RFC3339)}
+func(d *DB)Create(e *Item)error{e.ID=genID();e.CreatedAt=now();_,err:=d.db.Exec(`INSERT INTO items(id,name,description,status,category,tags,created_at)VALUES(?,?,?,?,?,?,?)`,e.ID,e.Name,e.Description,e.Status,e.Category,e.Tags,e.CreatedAt);return err}
+func(d *DB)Get(id string)*Item{var e Item;if d.db.QueryRow(`SELECT id,name,description,status,category,tags,created_at FROM items WHERE id=?`,id).Scan(&e.ID,&e.Name,&e.Description,&e.Status,&e.Category,&e.Tags,&e.CreatedAt)!=nil{return nil};return &e}
+func(d *DB)List()[]Item{rows,_:=d.db.Query(`SELECT id,name,description,status,category,tags,created_at FROM items ORDER BY created_at DESC`);if rows==nil{return nil};defer rows.Close();var o []Item;for rows.Next(){var e Item;rows.Scan(&e.ID,&e.Name,&e.Description,&e.Status,&e.Category,&e.Tags,&e.CreatedAt);o=append(o,e)};return o}
+func(d *DB)Delete(id string)error{_,err:=d.db.Exec(`DELETE FROM items WHERE id=?`,id);return err}
+func(d *DB)Count()int{var n int;d.db.QueryRow(`SELECT COUNT(*) FROM items`).Scan(&n);return n}
