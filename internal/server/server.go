@@ -36,6 +36,7 @@ patch.Platform=existing.Platform};if patch.Checksum==""{
 patch.Checksum=existing.Checksum};if patch.Status==""{
 patch.Status=existing.Status};if patch.DownloadURL==""{
 patch.DownloadURL=existing.DownloadURL}
+    if patch.SizeBytes==0{patch.SizeBytes=existing.SizeBytes}
     s.db.Update(&patch);wj(w,200,s.db.Get(patch.ID))
 }
 func(s *Server)del(w http.ResponseWriter,r *http.Request){s.db.Delete(r.PathValue("id"));wj(w,200,map[string]string{"deleted":"ok"})}
